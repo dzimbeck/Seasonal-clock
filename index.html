@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Solar Adjusted Clock</title>
+<style>
+  #clock-container {
+    position: relative;
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    border: 2px solid #ccc;
+    margin: 20px auto;
+  }
+
+  #clock-container canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  #time-display {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 20px;
+  }
+
+  #day-display {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 20px;
+  }
+
+  #info-display {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 20px;
+    width: 400px;
+    position: relative; /* Or absolute, if needed for your layout */
+    left: 50%;
+    transform: translateX(-50%); /* Center the element horizontally */
+  }
+
+  #location-inputs {
+    text-align: center;
+    margin-top: 20px;
+  }
+
+  #location-inputs input {
+    margin: 5px;
+  }
+</style>
+</head>
+<body>
+
+<div id="location-inputs">
+  <label for="latitude">Latitude:</label>
+  <input type="text" id="latitude" value="">
+  <label for="longitude">Longitude:</label>
+  <input type="text" id="longitude" value="">
+  <button id="update-location">Update</button>
+  <button id="update-geo">Geolocate</button>
+</div>
+
+<div id="clock-container">
+  <canvas id="clock" width="300" height="300"></canvas>
+</div>
+
+<div id="time-display"></div>
+<div id="day-display"></div>
+<div id="info-display">
+  <br>
+  Welcome to the true seasonal calendar. This calendar does not require daylight savings as the time is always
+  perfect for your location. This makes it easy for you to wake up and sleep with the sun. This is better for
+  planning your day and having a healthy circadian rhythm. Hence, this calendar perfectly keeps time and synchronizes
+  seasons. There are 12 months and 3 months per season with the year starting in Spring. Much like the Enoch calendar
+  there is an extra day added at the end of each season for the equinox. There are 4 weeks per month with two to three
+  extra days added at the end for the equinox. They are not considered days of the week. At the end of the year there
+  is an intermission with one or two days added to synchronize the next year with the sun. This could be considered
+  both a solar and lunar calendar as it accurately tracks both as closely as possible. Every month starts on Sunday
+  and the new year always falls on March 22nd compared to the traditional gregorian calendar.
+</div>
+
+<script>
+  const canvas = document.getElementById('clock');
+  const ctx = canvas.getContext('2d');
+  const timeDisplay = document.getElementById('time-display');
+  const dayDisplay = document.getElementById('day-display');
+  const latitudeInput = document.getElementById('latitude');
+  const longitudeInput = document.getElementById('longitude');
+  const updateButton = document.getElementById('update-location');
+
+  let solarNoonOffset = 0;
+  let sunriseTime = null;
+  let sunsetTime = null;
+
+  async function getLatLon(ip) {
+    const geoResponse = await fetch(`https://ipinfo.io/${ip}/json`);
+    const geoData = await geoResponse.json();
+    return { lat: geoData.loc.split(',')[0], lon: geoData.loc.split(',')[1] };
+  }
+
+  async function getCoordinates() {
+    const ipResponse = await fetch('https://api.ipify.org?format=json');
+    const ipData = await ipResponse.json();
+    return getLatLon(ipData.ip);
+  }
+
+  window.onload = async function() {
+    const latitudeInput = document.getElementById('latitude');
+    const longitudeInput = document.getElementById('longitude');
+
+    const storedLatitude = localStorage.getItem('latitude');
+    const storedLongitude = localStorage.getItem('longitude');
+
+    if (storedLatitude && storedLongitude) {
+      latitudeInput.value = storedLatitude;
+      longitudeInput.value = storedLongitude;
+    } else {
+      try {
+        const { lat, lon } = await getCoordinates();
+        latitudeInput.value = lat;
+        longitudeInput.value = lon;
+        localStorage.setItem('latitude', lat);
+        localStorage.setItem('longitude', lon);
+      } catch (error) {
+        console.error('Error getting location:', error);
+        // Handle the error (e.g., display a message to the user)
+      }
+    }
+    fetchSolarData(parseFloat(latitudeInput.value), parseFloat(longitudeInput.value));
+
+    document.getElementById('update-location').addEventListener('click', function() {
+      const lat = latitudeInput.value;
+      const lon = longitudeInput.value;
+      localStorage.setItem('latitude', lat);
+      localStorage.setItem('longitude', lon);
+    });
+  };
+
+  document.getElementById('update-geo').addEventListener('click', async function() {
+    const latitudeInput = document.getElementById('latitude');
+    const longitudeInput = document.getElementById('longitude');
+    const { lat, lon } = await getCoordinates();
+    latitudeInput.value = lat;
+    longitudeInput.value = lon;
+    localStorage.setItem('latitude', lat);
+    localStorage.setItem('longitude', lon);
+    fetchSolarData(parseFloat(latitudeInput.value), parseFloat(longitudeInput.value));
+  });
+
+  function fetchSolarData(lat, lng) {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const url = `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&tzid=${timezone}`;
+    fetch(url)
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === 'OK') {
+          //const utcOffset = new Date().getHours() - new Date().getUTCHours(); // Get the UTC offset
+          let solarNoon = convertTimeStringToDate(data.results.solar_noon);
+          //solarNoon.setHours(solarNoon.getHours() + utcOffset);
+          let sunrise = convertTimeStringToDate(data.results.sunrise);
+          //sunrise.setHours(sunrise.getHours() + utcOffset);
+          let sunset = convertTimeStringToDate(data.results.sunset);
+          //sunset.setHours(sunset.getHours() + utcOffset);
+          //console.log(solarNoon)
+          //console.log(sunrise)
+          //console.log(sunset)
+
+          sunriseTime = (sunrise);
+          sunsetTime = (sunset);
+          let solarNoonDate = (solarNoon);
+          let standardNoon = new Date();
+          standardNoon.setHours(12, 0, 0, 0);
+
+          solarNoonOffset = (solarNoonDate.getTime() - standardNoon.getTime()) / (1000 * 60);
+          sunriseTime = new Date(sunrise.getTime() - solarNoonOffset * 60000);
+          sunsetTime = new Date(sunset.getTime() - solarNoonOffset * 60000);
+          solarNoonDate = new Date(solarNoonDate.getTime() - solarNoonOffset * 60000);
+
+          drawClock();
+        } else {
+          console.error('Error fetching solar data:', data.status);
+          alert('Error fetching solar data. Please check your coordinates.');
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching solar data:', error);
+        alert('Error fetching solar data. Please check your network connection.');
+      });
+  }
+
+  function convertTimeStringToDate(timeString) {
+    const [time, ampm] = timeString.split(' ');
+    const [hours, minutes, seconds] = time.split(':').map(Number);
+    let hour24 = hours;
+
+    if (ampm === 'PM' && hours !== 12) {
+      hour24 += 12;
+    } else if (ampm === 'AM' && hours === 12) {
+      hour24 = 0;
+    }
+
+    const date = new Date();
+    date.setHours(hour24, minutes, seconds, 0);
+    return date;
+  }
+
+  function drawClock() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const radius = canvas.width / 2;
+    const centerX = radius;
+    const centerY = radius;
+
+    // Draw clock face
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius - 10, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // Draw numbers
+    for (let i = 0; i < 24; i++) {
+      const angle = (i - 6) * (Math.PI / 12);
+      const x = centerX + Math.cos(angle) * (radius - 30);
+      const y = centerY + Math.sin(angle) * (radius - 30);
+      ctx.fillText(i, x, y + 5);
+    }
+
+    // Draw sunrise-sunset arc
+    if (sunriseTime && sunsetTime) {
+      const sunriseAngle = (sunriseTime.getHours() + sunriseTime.getMinutes() / 60 - 6) * (Math.PI / 12);
+      const sunsetAngle = (sunsetTime.getHours() + sunsetTime.getMinutes() / 60 - 6) * (Math.PI / 12);
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius - 10, sunriseAngle, sunsetAngle);
+      ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)'; // Semi-transparent orange
+      ctx.lineWidth = 10;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "black";
+    }
+
+    // Draw clock hands
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - solarNoonOffset);
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const seconds = now.getSeconds();
+
+    const hourAngle = (hours + minutes / 60 - 6) * (Math.PI / 12);
+    const minuteAngle = (minutes + seconds / 60 - 15) * (Math.PI / 30);
+    const secondAngle = (seconds - 15) * (Math.PI / 30);
+
+    drawHand(hourAngle, radius * 0.5, 5);
+    drawHand(minuteAngle, radius * 0.8, 3);
+    drawHand(secondAngle, radius * 0.9, 1);
+
+    // Update time display
+    const formattedHours = String(hours).padStart(2, '0');
+    const formattedMinutes = String(minutes).padStart(2, '0');
+    const formattedSeconds = String(seconds).padStart(2, '0');
+    timeDisplay.textContent = `${formattedHours}:${formattedMinutes}:${formattedSeconds}`;
+    dayDisplay.textContent = convert(`${new Date().getDate().toString().padStart(2, '0')}/${(new Date().getMonth() + 1).toString().padStart(2, '0')}/${new Date().getFullYear()}`);
+
+    requestAnimationFrame(drawClock);
+  }
+
+  function drawHand(angle, length, width) {
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const x = centerX + Math.cos(angle) * length;
+    const y = centerY + Math.sin(angle) * length;
+
+    ctx.beginPath();
+    ctx.lineWidth = width;
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  }
+
+  updateButton.addEventListener('click', () => {
+    const lat = parseFloat(latitudeInput.value);
+    const lng = parseFloat(longitudeInput.value);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      fetchSolarData(lat, lng);
+    } else {
+      alert('Please enter valid latitude and longitude values.');
+    }
+  });
+
+  function convert(inputDate, convert = 1) {
+      // First calculate the day number in the year
+      var days_in_months = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+      // Parse the date to be converted
+      var inputDateElements = inputDate.split('/');
+      var dayNum = parseInt(inputDateElements[0]);
+      var monthNum = parseInt(inputDateElements[1]);
+      var yearNum = parseInt(inputDateElements[2]);
+
+      // Account for leap years
+      if (yearNum % 4 == 0) {
+          days_in_months[1] = 29;
+      }
+
+      var nthDay = 0;
+      for (var i = 0; i < monthNum - 1; i++) {
+          nthDay += days_in_months[i];
+      }
+      nthDay += dayNum;
+      if(convert == 1) {
+        if (yearNum % 4 != 0) {
+          if(nthDay <= 80) {
+            nthDay+=285;
+            yearNum -= 1;
+          } else {
+            nthDay -= 80;
+          }
+        } else {
+          if(nthDay <= 81) {
+            nthDay+=285;
+            yearNum -= 1;
+          } else {
+            nthDay -= 81;
+          }
+        }
+      }
+
+      // Define the Gormanian months
+      var seasonMonths = ['Spring 1', 'Spring 2', 'Spring 3', 'Summer 1', 'Summer 2', 'Summer 3',
+                          'Autumn 1', 'Autumn 2', 'Autumn 3', 'Winter 1', 'Winter 2', 'Winter 3'];
+      // Calculate the Gorman day and month      
+      var newMonths = [30,60,91,121,151,182,212,242,273,303,333,364];      
+      if(convert == 0) {
+        var newMonths2 = [30,30,31,30,30,31,30,30,31,30,30,31];
+        nthDay = dayNum;
+        for (var i = 0; i < monthNum - 1; i++) {
+            nthDay += newMonths2[i];
+        }
+      }
+      var seasonMonth = newMonths.findIndex(monthEnd => nthDay <= monthEnd);
+      var seasonDay = nthDay;
+      var extraDays = "";
+      if(seasonMonth > 0) {
+        seasonDay = nthDay - newMonths[seasonMonth - 1];
+        if(seasonDay == 29) {
+          extraDays = "Equinox 1"
+        }
+        if(seasonDay == 30) {
+          extraDays = "Equinox 2"
+        }
+        if(seasonDay == 31) {
+          extraDays = "Equinox 3"
+        }
+      } else {
+        if(seasonDay == 29) {
+          extraDays = "Equinox 1"
+        }
+        if(seasonDay == 30) {
+          extraDays = "Equinox 2"
+        }
+        if(seasonDay == 31) {
+          extraDays = "Equinox 3"
+        }
+      }
+      if(convert == 1) {
+        if(seasonDay <= 28) {
+          seasonDay = seasonDay % 28;
+        }
+      } else {
+        if(seasonDay <= 28) {
+          seasonDay = dayNum % 28;
+        }
+      }
+      if (seasonDay == 0) {
+          seasonDay = 28;
+      }
+      // Set the date modifier
+      var dateMod = 'th';
+      switch (seasonDay) {
+          case 1:
+          case 21:
+              dateMod = 'st';
+              break;
+          case 2:
+          case 22:
+              dateMod = 'nd';
+              break;
+          case 3:
+          case 23:
+              dateMod = 'rd';
+              break;
+      }
+
+      // Calculate the Gormanian day of the week
+      var daysOfTheWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      var seasonDayOfWeekNum = seasonDay % 7 - 1;
+      if (seasonDayOfWeekNum == -1) {
+          seasonDayOfWeekNum = 6
+      }
+      if(extraDays == "") {
+        extraDays = daysOfTheWeek[seasonDayOfWeekNum];
+      }
+      // Set the Gorman date string
+      var seasonDate = yearNum.toString() + ' ' + 'Intermission';
+      if (nthDay < 365) {
+          seasonDate = extraDays + ', ' + seasonDay.toString() +
+                       dateMod + ' of ' + seasonMonths[seasonMonth] + ' - ' + yearNum.toString() + ': Day - ' + nthDay;
+      }
+      if (nthDay == 366) {
+        seasonDate = yearNum.toString() + ' ' + 'Second Intermission';
+      }
+
+      return seasonDate;
+  }
+
+  function convert2(inputDate, convert = 1) {
+      // First calculate the day number in the year
+      var days_in_months = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+      // Parse the date to be converted
+      var inputDateElements = inputDate.split('/');
+      var dayNum = parseInt(inputDateElements[0]);
+      var monthNum = parseInt(inputDateElements[1]);
+      var yearNum = parseInt(inputDateElements[2]);
+
+      // Account for leap years
+      if (yearNum % 4 == 0) {
+          days_in_months[1] = 29;
+      }
+
+      var nthDay = 0;
+      for (var i = 0; i < monthNum - 1; i++) {
+          nthDay += days_in_months[i];
+      }
+      nthDay += dayNum;
+      if(convert == 1) {
+        if (yearNum % 4 != 0) {
+          if(nthDay <= 80) {
+            nthDay+=285;
+            yearNum -= 1;
+          } else {
+            nthDay -= 80;
+          }
+        } else {
+          if(nthDay <= 81) {
+            nthDay+=285;
+            yearNum -= 1;
+          } else {
+            nthDay -= 81;
+          }
+        }
+      }
+
+      // Define the Gormanian months
+      var gormanMonths = ['March/Aries', 'April/Taurus', 'May/Dioscuri', 'June/Karkinos', 'July/Leo', 'August/Virgo',
+                          'September/Libra', 'October/Scorpio', 'November/Ophiuchus', 'December/Sagittarius', 'January/Capricorn',
+                          'February/Aquarius', 'Sol/Pisces'];
+      // Calculate the Gorman day and month
+      var gormanMonth = Math.floor(nthDay/28);
+      var gormanDay = nthDay % 28;
+      if (gormanDay == 0) {
+          gormanDay = 28;
+          gormanMonth -= 1;
+      }      
+
+      // Set the date modifier
+      var dateMod = 'th';
+      switch (gormanDay) {
+          case 1:
+          case 21:
+              dateMod = 'st';
+              break;
+          case 2:
+          case 22:
+              dateMod = 'nd';
+              break;
+          case 3:
+          case 23:
+              dateMod = 'rd';
+              break;
+      }
+
+      // Calculate the Gormanian day of the week
+      var daysOfTheWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      var gormanDayOfWeekNum = nthDay % 7 - 1;
+      if (gormanDayOfWeekNum == -1) {
+          gormanDayOfWeekNum = 6
+      }
+
+      // Set the Gorman date string
+      var gormanDate = 'Intermission';
+      if (nthDay < 365) {
+          gormanDate = daysOfTheWeek[gormanDayOfWeekNum] + ', ' + gormanDay.toString() +
+                       dateMod + ' ' + gormanMonths[gormanMonth] + ' ' + yearNum.toString() + ': Day - ' + nthDay;
+      }
+
+      return gormanDate;
+  }
+</script>
+
+</body>
+</html>
